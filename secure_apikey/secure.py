@@ -1,39 +1,52 @@
 import os
 import sys
 import base64
-from typing import Tuple
+from typing import Tuple, Union
 from Crypto.Cipher import AES
 import getpass
 
-__version__ = 0.0017
+__version__ = 0.0065
 
 
-def ask_4phrase(bytes_limit: int, msg_text: str, phrase_name: str) -> str:
+def prepare_phrase(in_phrase):
+    bytes_const = 32
+    in_phrase_len = len(in_phrase)
+    if in_phrase_len < bytes_const:
+        in_phrase = (in_phrase * int(bytes_const // in_phrase_len + 1))[:bytes_const]
+    elif in_phrase_len > bytes_const:
+        in_phrase = in_phrase[:bytes_const]
+    return in_phrase
+
+def ask_4phrase(bytes_limit: Union[int, None], msg_text: str, phrase_name: str) -> str:
+    bytes_const = 32
     in_phrase = b""
-    while len(in_phrase) != bytes_limit:
+
+    if bytes_limit is not None:
+        while len(in_phrase) != bytes_limit:
+            in_phrase = getpass.getpass(f'{msg_text}')
+            in_phrase_len = len(in_phrase)
+            if in_phrase_len != bytes_limit:
+                print(f"Length of {phrase_name} is {in_phrase_len} bytes, not {bytes_limit} bytes")
+                print(f"please correct the {phrase_name} and enter again!")
+                continue
+            else:
+                break
+    else:
         in_phrase = getpass.getpass(f'{msg_text}')
-        in_phrase_len = len(in_phrase)
-        if len(in_phrase) != bytes_limit:
-            print(f"Length of {phrase_name} is {in_phrase_len} bytes, not {bytes_limit} bytes")
-            print(f"please correct the {phrase_name} and enter again!")
-            continue
-        else:
-            break
+        in_phrase = prepare_phrase(in_phrase)
     return in_phrase
 
 
-def asking_2components_secret() -> bytes:
+def asking_2components_secret(first_part_salt_phrase_len: int = 22, second_part_salt_phrase_len: int = 10) -> bytes:
     """
     Asking for the SALT for encryption divided in two parts
 
     Returns:
         secret (bytes):     encoded (ascii) secret
     """
-    first_part_salt_phrase_len = 22
     first_part_salt_phrase = ask_4phrase(first_part_salt_phrase_len,
                                          f"Enter the 1st part of SALT phrase, {first_part_salt_phrase_len} bytes ONLY: ",
                                          "1st part of SALT")
-    second_part_salt_phrase_len = 10
     second_part_salt_phrase = ask_4phrase(second_part_salt_phrase_len,
                                           f"Enter the 2nd part of SALT phrase, {second_part_salt_phrase_len} bytes ONLY: ",
                                           "2nd part of SALT")
@@ -43,12 +56,28 @@ def asking_2components_secret() -> bytes:
     return user_salt
 
 
-class Secure:
-    # def __init__(self, base64_encode: bool = True) -> None:
-    #     self.base64_encode = base64_encode
-    #     pass
+def asking_1components_secret(salt_phrase_len=None) -> bytes:
+    """
+    Asking for the SALT for encryption divided in one parts
 
-    def encrypt(self, to_encrypt: str, salt: bytes) -> Tuple[bytes, bytes]:
+    Returns:
+        secret (bytes):     encoded (ascii) secret
+    """
+    if salt_phrase_len is not None:
+        msg = f"Enter the SALT phrase, {salt_phrase_len} bytes ONLY: "
+        user_salt = ask_4phrase(salt_phrase_len, msg, "SALT")
+    else:
+        msg = f"Enter the SALT phrase: "
+        user_salt = ask_4phrase(salt_phrase_len, msg, "SALT")
+
+    user_salt = user_salt.encode('ascii')
+    return user_salt
+
+
+class Secure:
+
+    @staticmethod
+    def encrypt(to_encrypt: str, salt: bytes) -> Tuple[bytes, bytes]:
         # First make your data a bytes object. To convert a string to a bytes object, we can call .encode() on it
         to_encrypt_encoded = to_encrypt.encode('utf-8')
         # Create the cipher object and encrypt the data
@@ -60,7 +89,8 @@ class Secure:
         # else:
         #     return ciphered_bytes, iv
 
-    def decrypt(self, to_decrypt: bytes, salt: bytes, iv: bytes) -> str:
+    @staticmethod
+    def decrypt(to_decrypt: bytes, salt: bytes, iv: bytes) -> str:
         """
         Args:
             to_decrypt:     encrypted key to decrypt
@@ -91,15 +121,8 @@ class Secure:
             env_OK = True
         return env_OK
 
-    def get_key(self):
-        env_names_list = ["PARSE_KEY", "PARSE_SECRET", "PARSE_KEY_IV", "PARSE_SECRET_IV"]
-        if not Secure.check_env(env_names_list):
-            print('Encrypted API keys not found in environment variables,\nplease create create keys!')
-            print()
-            Secure.encrypt_keys()
-            msg = f'Warning! Keys created please restart application!'
-            sys.exit(msg)
-
+    @staticmethod
+    def get_decrypted_data(env_names_list, secret_phrase):
         env_values_list = [os.environ.get(name) for name in env_names_list]
         env_values_list = [value.encode('ascii') for value in env_values_list]
 
@@ -109,13 +132,51 @@ class Secure:
         parse_key_iv = env_values_list[2]
         parse_secret_iv = env_values_list[3]
 
+        """ Decrypt key and secret """
+        key = Secure.decrypt(parse_key, secret_phrase, parse_key_iv)
+        secret = Secure.decrypt(parse_secret, secret_phrase, parse_secret_iv)
+        return key, secret
+
+    @staticmethod
+    def get_key():
+        env_names_list = ["PARSE_KEY", "PARSE_SECRET", "PARSE_KEY_IV", "PARSE_SECRET_IV"]
+        if not Secure.check_env(env_names_list):
+            print('Encrypted API keys not found in environment variables,\nplease create create keys!\n')
+            Secure.encrypt_keys()
+            msg = f'Warning! Keys created please restart application!'
+            sys.exit(msg)
+
         """ Getting salt parts """
         secret_phrase: bytes = asking_2components_secret()
+        return Secure.get_decrypted_data(env_names_list, secret_phrase)
 
-        """ Decrypt key and secret """
-        key = self.decrypt(parse_key, secret_phrase, parse_key_iv)
-        secret = self.decrypt(parse_secret, secret_phrase, parse_secret_iv)
-        return key, secret
+    @staticmethod
+    def get_username_password(prefix: str = '', use_env_salt: bool = False):
+        prefix = prefix.upper()
+        env_names_list = ["PARSE_USERNAME", "PARSE_PASSWORD", "PARSE_USERNAME_IV", "PARSE_PASSWORD_IV"]
+        env_names_list = [f'{prefix}{env_name}' for env_name in env_names_list]
+        salt_filename = f'{prefix}salt.env' if prefix != '' else 'salt.env'
+        if not Secure.check_env(env_names_list):
+            print('Encrypted USERNAME and PASSWORD not found in environment variables,\nplease create create keys!')
+            print()
+            Secure.encrypt_username_password(salt_filename, prefix=prefix, only_show=False)
+            msg = f'Warning! Data encrypted and saved to {salt_filename}. Set the ENV and please restart application!'
+            sys.exit(msg)
+
+        """ Getting salt parts """
+        if use_env_salt:
+            secret_phrase = prepare_phrase(Secure.get_env_salt_value(f'{prefix.upper()}_KEY').encode('ascii'))
+        else:
+            secret_phrase: bytes = asking_1components_secret()
+        return Secure.get_decrypted_data(env_names_list, secret_phrase)
+
+    @staticmethod
+    def get_env_salt_value(salt_env_name: str):
+        if not Secure.check_env([salt_env_name]):
+            msg = f'SALT {salt_env_name} not found, add SALT environment variable(s)!'
+            sys.exit(msg)
+        salt_env_value = os.environ.get(salt_env_name)
+        return salt_env_value
 
     @staticmethod
     def encrypt_keys(filename: str = '.env',
@@ -178,6 +239,76 @@ class Secure:
         del secret_to_encrypt
         pass
 
+    @staticmethod
+    def encrypt_username_password(filename: str = 'salt.env', only_show: bool = True, prefix: str = '') -> None:
+        """
+        Args:
+            filename (str):     filename for dot env file
+            only_show (bool):   Do not write data to file. Show on screen only
+            prefix (str):       prefix for variables
+        """
+        if len(prefix) > 1:
+            prefix = prefix.upper()
+            filename = f'{prefix}{filename}'
+
+        secret_phrase = asking_1components_secret(salt_phrase_len=None)
+        print()
+        username_to_encrypt = getpass.getpass(f'Enter the {prefix} USERNAME: ')
+        password_to_encrypt = getpass.getpass(f'Enter the {prefix} PASSWORD to encrypt: ')
+
+        secure_key = Secure()
+        print('Key encryption...')
+        username_encrypted_base64, username_iv_base64 = secure_key.encrypt(username_to_encrypt, secret_phrase)
+        print('Key decryption...')
+        decrypted_username = secure_key.decrypt(username_encrypted_base64, secret_phrase, username_iv_base64)
+        if username_to_encrypt == decrypted_username:
+            print('Original data match the result!')
+        else:
+            print('Original data does not match the result\n')
+            msg = f'Encrypted & decrypted user name: \n{username_to_encrypt}\n{decrypted_username}'
+            del username_to_encrypt
+            del password_to_encrypt
+            sys.exit(msg)
+
+        print('Password encryption...')
+        password_encrypted_base64, password_iv_base64 = secure_key.encrypt(password_to_encrypt, secret_phrase)
+
+        print('Password decryption...')
+        decrypted_password = secure_key.decrypt(password_encrypted_base64, secret_phrase, password_iv_base64)
+
+        if password_to_encrypt == decrypted_password:
+            print('Original data match the result!\n')
+        else:
+            print('Original data does not match the result!\n')
+            msg = f'Encrypted & decrypted password: \n{password_to_encrypt}\n{decrypted_password}'
+            del username_to_encrypt
+            del password_to_encrypt
+            sys.exit(msg)
+
+        if only_show:
+            print("Encrypted user:", username_encrypted_base64)
+            print("Encrypted user iv:", username_iv_base64)
+
+            print(f'Encrypted password: {password_encrypted_base64}')
+            print(f'Encrypted password iv: {password_iv_base64}')
+        else:
+            sys.stdout = open(filename, 'w')
+            sys.stdout.buffer.write(
+                (bytes(f'{prefix}PARSE_USERNAME=', 'utf-8')) + username_encrypted_base64 + (bytes('\n', 'utf-8')))
+            sys.stdout.buffer.write(
+                (bytes(f'{prefix}PARSE_PASSWORD=', 'utf-8')) + password_encrypted_base64 + (bytes('\n', 'utf-8')))
+            sys.stdout.buffer.write(
+                (bytes(f'{prefix}PARSE_USERNAME_IV=', 'utf-8')) + username_iv_base64 + (bytes('\n', 'utf-8')))
+            sys.stdout.buffer.write(
+                (bytes(f'{prefix}PARSE_PASSWORD_IV=', 'utf-8')) + password_iv_base64 + (bytes('\n', 'utf-8')))
+            sys.stdout.close()
+        del username_to_encrypt
+        del password_to_encrypt
+
 
 if __name__ == '__main__':
-    Secure.encrypt_keys(filename='testenv', only_show=False)
+    # Secure.encrypt_keys(filename='testenv', only_show=False)
+    # prepare environment key set for username and password
+    # Secure.encrypt_username_password(prefix='sql', only_show=False)
+    # check the environment set (LOAD it in IDE config file, or set them in batch file for environment)
+    print(Secure.get_username_password(prefix='sql', use_env_salt=True))
