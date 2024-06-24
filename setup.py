@@ -3,8 +3,8 @@ from setuptools import setup
 setup(
     name='secureapikey',
     version='0.12',
-    packages=['secureapikey'],
-    package_dir={'': 'tools'},
+    packages=['tools'],
+    package_dir={},
     url='https://github.com/cubecloud/secureapikey',
     license='MIT',
     author='cubecloud',
