@@ -4,7 +4,7 @@ setup(
     name='secureapikey',
     version='0.12',
     packages=[''],
-    package_dir={'': 'secureapikey'},
+    package_dir={'': 'tools'},
     url='https://github.com/cubecloud/secureapikey',
     license='MIT',
     author='cubecloud',
