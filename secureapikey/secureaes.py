@@ -171,12 +171,12 @@ class Secure:
         """ Getting salt parts """
         if use_env_salt:
             if not Secure.check_env([f'{prefix.upper()}_KEY']):
-                print(f'ENV salt with prefix {prefix} is not set, enter salt from keyboard.')
+                print(f'ENV salt with prefix {prefix} is not set, enter salt from keyboard or add to ENV file {prefix.upper()}_KEY variable with salt')
                 secret_phrase: bytes = asking_1components_secret()
             else:
                 secret_phrase = prepare_phrase(Secure.get_env_value(f'{prefix.upper()}_KEY').encode('ascii'))
         else:
-            print(f'ENV salt with prefix {prefix} is not set, enter salt from keyboard.')
+            print(f'ENV salt with prefix {prefix} is not set, enter salt from keyboard or add to ENV file {prefix.upper()}_KEY variable with salt')
             secret_phrase: bytes = asking_1components_secret()
         return Secure.get_decrypted_data(env_names_list, secret_phrase)
 
