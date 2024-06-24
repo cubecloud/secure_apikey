@@ -1,4 +1,4 @@
-# secure_apikey
+# secureapikey
 Secure api key and secret (primary for binance)
 Also tool have a method to secure username and password in the same way
 
