@@ -1,11 +1,11 @@
 from setuptools import setup
 
 setup(
-    name='secure_apikey',
-    version='0.11',
+    name='secureapikey',
+    version='0.12',
     packages=[''],
-    package_dir={'': 'secure_apikey'},
-    url='https://github.com/cubecloud/secure_apikey',
+    package_dir={'': 'secureapikey'},
+    url='https://github.com/cubecloud/secureapikey',
     license='MIT',
     author='cubecloud',
     author_email='zenroad60@gmail.ru',

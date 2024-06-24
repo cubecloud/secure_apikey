@@ -5,7 +5,7 @@ from typing import Tuple, Union
 from Crypto.Cipher import AES
 import getpass
 
-__version__ = 0.11
+__version__ = 0.12
 
 
 def prepare_phrase(in_phrase):
